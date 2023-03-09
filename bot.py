@@ -17,7 +17,7 @@ turn = None
 cycles = 0
 bomb = False
 currentPrompt = 'a'
-mode = 'normal'
+mode = 'normal-easy'
 
 # ================
 # PROMPT GENERATOR
@@ -80,7 +80,7 @@ def generatePrompt(difficulty):
     or2 = "(" + segment6 + "|" + segment7 + "|" + segment8 + ")"
 
     match difficulty:
-        case 'normal': 
+        case 'normal-easy': 
             index = random.randint(0, len(word1) - 3)
             regex = word1[index:index+3]
 
@@ -89,12 +89,27 @@ def generatePrompt(difficulty):
                 if re.match('^.*' + regex + '.*$', word):
                     matches += 1
             
-            if matches >= 100:
+            if matches >= 50 and matches <= 1000:
                 return regex
             else:
                 return generatePrompt(difficulty)
             
-        case 'hard':
+        case 'normal-hard':
+            length = random.randint(3, 4)
+            index = random.randint(0, len(word1) - length)
+            regex = word1[index:index+length]
+
+            matches = 0
+            for word in words10k:
+                if re.match('^.*' + regex + '.*$', word):
+                    matches += 1
+            
+            if matches >= 20 and matches <= 500:
+                return regex
+            else:
+                return generatePrompt(difficulty)
+            
+        case 'regex-easy':
             options1 = [letter1, segment1, sb1]
             options2 = [letter2, segment2, sb2]
             begin = ['.+', '.*', letter1, letter2]
@@ -117,17 +132,15 @@ def generatePrompt(difficulty):
             else:
                 return generatePrompt(difficulty)
             
-        case 'extreme':
+        case 'regex-hard':
             options1 = [letter1, segment1, sb1, nsb1, charRange1, or1]
             options2 = [letter2, segment2, sb2, nsb2, charRange2, or2]
             begin = ['.+', '.*', letter1, letter2, sb1, sb2]
             connect = ['.+', '.*', '+', '*', '+.+', '+.*', '?', numRange1, numRange2]
 
             match(random.randint(1, 8)):
-                case 1: regex = random.choice(options1) + random.choice(connect)
-                case 2: regex = random.choice(begin) + random.choice(options1)
-                case 3: regex = random.choice(begin) + random.choice(options1) + random.choice(connect) + random.choice(options2)
-                case 4: regex = random.choice(options1) + random.choice(connect) + random.choice(options2) + random.choice(connect)
+                case 1: regex = random.choice(begin) + random.choice(options1) + random.choice(connect) + random.choice(options2)
+                case 2: regex = random.choice(options1) + random.choice(connect) + random.choice(options2) + random.choice(connect)
                 case other: regex = random.choice(begin) + random.choice(options1) + random.choice(connect) + random.choice(options2) + random.choice(connect)
 
             matches = 0
@@ -199,17 +212,21 @@ async def on_message(message):
     elif message.content == '!players':
         await message.channel.send(f'Players: {", ".join([p.mention for p in players])}')
 
-    elif message.content == '!mode normal':
-        await message.channel.send('Difficulty set to normal.')
-        mode = 'normal'
-
-    elif message.content == '!mode hard':
-        await message.channel.send('Difficulty set to hard.')
-        mode = 'hard'
-
-    elif message.content == '!mode extreme':
-        await message.channel.send('Difficulty set to extreme.')
-        mode = 'extreme'
+    # Modes
+    elif message.content == '!mode' or message.content == '!modes':
+        await message.channel.send('Modes: `normal-easy`, `normal-hard`, `regex-easy`, `regex-hard`.')
+    elif message.content == '!mode normal-easy':
+        await message.channel.send('Mode set to normal, on easy difficulty.')
+        mode = 'normal-easy'
+    elif message.content == '!mode normal-hard':
+        await message.channel.send('Mode set to normal, on hard difficulty.')
+        mode = 'normal-hard'
+    elif message.content == '!mode regex-easy':
+        await message.channel.send('Mode set to regex, on easy difficulty.')
+        mode = 'regex-easy'
+    elif message.content == '!mode regex-hard':
+        await message.channel.send('Mode set to regex, on hard difficulty.')
+        mode = 'regex-hard'
 
     # ==================
     # COMMANDS: MID-GAME
@@ -228,22 +245,41 @@ async def on_message(message):
     # Game in progress and message from current turn player (this takes the turn response, keep this below commands)
     elif turn is not None and message.author == players[turn]:
 
+        # Check if prompt is in message
+        if mode == 'normal-easy' or mode == 'normal-hard':
+            if currentPrompt in message.content and message.content in words84k:
+                await message.channel.send('Correct!')
+
+                # Cycle to the next player, returning to 0 when last player is reached
+                turn = (turn + 1) % len(players)
+
+                # If turn is 0, one round cycle has ended. Game then continues to next turn below
+                if turn == 0:
+                    cycles += 1
+                    await message.channel.send(f'Round cycle complete. Moving on to round {cycles + 1}.')
+
+                # Game continues to next turn
+                if turn < len(players):
+                    currentPrompt = generatePrompt(mode)
+                    await message.channel.send(f"{players[turn].mention}, it's your turn. Match `{currentPrompt}`")
+
         # Check the message against the regex
-        if re.match('^' + currentPrompt + '.*' + '$', message.content) and message.content in words84k:
-            await message.channel.send('Correct!')
+        elif mode == 'regex-easy' or mode == 'regex-hard':
+            if re.match('^' + currentPrompt + '.*' + '$', message.content) and message.content in words84k:
+                await message.channel.send('Correct!')
 
-            # Cycle to the next player, returning to 0 when last player is reached
-            turn = (turn + 1) % len(players)
+                # Cycle to the next player, returning to 0 when last player is reached
+                turn = (turn + 1) % len(players)
 
-            # If turn is 0, one round cycle has ended. Game then continues to next turn below
-            if turn == 0:
-                cycles += 1
-                await message.channel.send(f'Round cycle complete. Moving on to round {cycles + 1}.')
+                # If turn is 0, one round cycle has ended. Game then continues to next turn below
+                if turn == 0:
+                    cycles += 1
+                    await message.channel.send(f'Round cycle complete. Moving on to round {cycles + 1}.')
 
-            # Game continues to next turn
-            if turn < len(players):
-                currentPrompt = generatePrompt(mode)
-                await message.channel.send(f"{players[turn].mention}, it's your turn. Match `{currentPrompt}`")
+                # Game continues to next turn
+                if turn < len(players):
+                    currentPrompt = generatePrompt(mode)
+                    await message.channel.send(f"{players[turn].mention}, it's your turn. Match `{currentPrompt}`")
 
     # Game in progress and message from non-current turn player
     # elif turn is not None and message.author != players[turn]:
