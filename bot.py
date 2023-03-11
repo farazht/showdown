@@ -1,8 +1,8 @@
 import discord, asyncio, random, string, re
 
-# Create a new client instance
 intents = discord.Intents.default()
 intents.message_content = True
+
 client = discord.Client(intents=intents)
 
 # Read word files
@@ -13,10 +13,10 @@ with open('words84k.txt', 'r') as f:
 
 # Variables
 players = []
-turn = None
-cycles = 0
-bomb = False
-currentPrompt = 'a'
+lives = {}
+current_prompt = None
+round_time = 30
+game_running = False
 mode = 'normal-easy'
 
 # ================
@@ -62,15 +62,15 @@ def generatePrompt(difficulty):
     charRange2 = "[" + random.choice('abcdefghijklm') + "-" + random.choice('nopqrstuvwxyz') + "]"
 
     # Generate 6 more segments for the ors
-    index = random.randint(0, len(word2) - 2)
+    index = random.randint(0, len(word1) - 2)
     segment3 = word2[index:index+2]
     index = random.randint(0, len(word2) - 2)
     segment4 = word2[index:index+2]
-    index = random.randint(0, len(word2) - 2)
+    index = random.randint(0, len(word1) - 2)
     segment5 = word2[index:index+2]
     index = random.randint(0, len(word2) - 2)
     segment6 = word2[index:index+2]
-    index = random.randint(0, len(word2) - 2)
+    index = random.randint(0, len(word1) - 2)
     segment7 = word2[index:index+2]
     index = random.randint(0, len(word2) - 2)
     segment8 = word2[index:index+2]
@@ -89,7 +89,7 @@ def generatePrompt(difficulty):
                 if re.match('^.*' + regex + '.*$', word):
                     matches += 1
             
-            if matches >= 50 and matches <= 1000:
+            if matches >= 50 and matches <= 1000 and regex not in words10k:
                 return regex
             else:
                 return generatePrompt(difficulty)
@@ -104,7 +104,7 @@ def generatePrompt(difficulty):
                 if re.match('^.*' + regex + '.*$', word):
                     matches += 1
             
-            if matches >= 20 and matches <= 500:
+            if matches >= 20 and matches <= 500 and regex not in words10k:
                 return regex
             else:
                 return generatePrompt(difficulty)
@@ -153,137 +153,162 @@ def generatePrompt(difficulty):
             else:
                 return generatePrompt(difficulty)
 
-# When the bot is ready, print a message
 @client.event
-async def on_ready(): 
+async def on_ready():
     print(f'Successfully logged in as {client.user}')
 
-# Read messages and respond to commands
 @client.event
 async def on_message(message):
-    global players, turn, cycles, bomb, currentPrompt, mode
+    global players, current_prompt, round_time, lives, game_running, mode
 
     # Ignore messages from the bot itself
     if message.author == client.user:
         return
-    
-    # ==================
-    # COMMANDS: PRE-GAME
-    # ==================
-    
-    # Start a new game
-    elif message.content == '!start':
 
-        # If turn is not None, a game is already in progress
-        if turn is not None:
-            await message.channel.send('Game is already in progress.')
-
-        # If there are less than 2 players, the game cannot start
-        elif len(players) < 1: # !!! CHANGE THIS TO 2
-            await message.channel.send('Need at least 2 players to start.')
-
-        # All conditions met, start the game
-        else:
-            await message.channel.send('Game starting in 10 seconds...')
-            
-            await asyncio.sleep(10)
-
-            turn = 0
-            currentPrompt = generatePrompt(mode)
-            await message.channel.send(f"{players[turn].mention}, it's your turn. Match `{currentPrompt}`")
-    
-    # Join the game
-    elif message.content == '!join':
-
-        # If turn is not None, a game is already in progress
-        if turn is not None:
-            await message.channel.send(f'Sorry {message.author.mention}, you cannot join an in-progress game.')
-
-        # If the player is not in players, add them
-        elif message.author not in players:
+    if message.content == ('!join'):
+        if game_running:
+            await message.channel.send(f"❌ Sorry {message.author.mention}, you can't join an in-progress game. ❌")
+            return
+        if message.author not in players:
             players.append(message.author)
-            await message.channel.send(f'{message.author.mention} has joined the game.')
+            lives[message.author] = 5
+            await message.channel.send(f'✅ {message.author.mention} has joined the game. ✅')
+        else:
+            await message.channel.send(f'❌ {message.author.mention}, you are already in the game. ❌')
 
-        # If the player is already in players, do nothing
-        else: 
-            await message.channel.send(f'{message.author.mention}, you are already in the game.')
-    
-    # Print the list of players
-    elif message.content == '!players':
-        await message.channel.send(f'Players: {", ".join([p.mention for p in players])}')
+    elif message.content == ('!start'):
+        if game_running:
+            await message.channel.send('❌ A game is already in progress. ❌')
+            return
+        
+        if len(players) < 2:
+            await message.channel.send('❌ Not enough players to start the game. ❌')
+            return
+        
+        await message.channel.send('🏁 Starting game in 5 seconds. 🏁')
+        await asyncio.sleep(5)
+        game_running = True
+        
+        while len(players) > 1:
 
-    # Modes
-    elif message.content == '!mode' or message.content == '!modes':
-        await message.channel.send('Modes: `normal-easy`, `normal-hard`, `regex-easy`, `regex-hard`.')
-    elif message.content == '!mode normal-easy':
-        await message.channel.send('Mode set to normal, on easy difficulty.')
-        mode = 'normal-easy'
-    elif message.content == '!mode normal-hard':
-        await message.channel.send('Mode set to normal, on hard difficulty.')
-        mode = 'normal-hard'
-    elif message.content == '!mode regex-easy':
-        await message.channel.send('Mode set to regex, on easy difficulty.')
-        mode = 'regex-easy'
-    elif message.content == '!mode regex-hard':
-        await message.channel.send('Mode set to regex, on hard difficulty.')
-        mode = 'regex-hard'
+            await message.channel.send(f'⏲️ NEW ROUND: **{round(round_time, 1)} seconds** per player. ⏲️')
 
-    # ==================
-    # COMMANDS: MID-GAME
-    # ==================
+            for player in players:
+                current_prompt = generatePrompt(mode)
+                await message.channel.send(f"🛎️ {player.mention}, it's your turn. Prompt: `{current_prompt}` 🛎️")
 
-    # Stop game if it is in progress and the message author is a current player
-    elif message.content == '!stop' and turn is not None and message.author in players:
+                def check(m):
+                    if mode == 'normal-easy' or mode == 'normal-hard':
+                        return m.author == player and current_prompt in m.content and m.content in words84k
+                    else:
+                        return m.author == player and re.match('^' + current_prompt + '$', m.content) and m.content in words84k
+
+                while True:
+                    try:
+                        msg = await client.wait_for('message', check=check, timeout=round_time)
+                        await message.channel.send(f'🎉 Correct! 🎉')
+                        break
+
+                    except asyncio.TimeoutError:
+                        lives[player] -= 1
+
+                        await message.channel.send(f"⏰ Time's up, {player.mention}. **-1 life** ({lives[player]} lives remaining) ⏰")
+
+                        if lives[player] == 0:
+                            await message.channel.send(f'❌ {player.mention} has been eliminated. ❌')
+                            players.remove(player)
+                            del lives[player]
+
+                        await message.channel.send(f'💣 **WORD BOMB!** If nobody solves {player.mention}\'s prompt in the next 5 seconds, **EVERYBODY** loses a life. 💣')
+
+                        def stealCheck(m):
+                            if mode == 'normal-easy' or mode == 'normal-hard':
+                                return m.author != player and current_prompt in m.content and m.content in words84k
+                            else:
+                                return m.author != player and re.match('^' + current_prompt + '$', m.content) and m.content in words84k
+                        
+                        try:
+                            msg = await client.wait_for('message', check=stealCheck, timeout=5)
+
+                            lives[msg.author] += 1
+
+                            await message.channel.send(f'🎉 Congrats, {msg.author.mention}. **+1 life** ({lives[msg.author]} lives remaining) 🎉')
+
+                        except asyncio.TimeoutError:
+                            await message.channel.send(f'💥 Nobody solved {player.mention}\'s prompt. Everyone **-1 life**. 💥')
+                            
+                            for p in players:
+                                if lives[p] == 0:
+                                    await message.channel.send(f'❌ {p.mention} has been eliminated. ❌')
+                                    players.remove(p)
+                                    del lives[p]
+
+                        break
+                
+                if len(players) == 1:
+                    break
+
+            if round_time > 5:
+                round_time -= 2.5
+            
+            current_prompt = None
+        
+        # end the game and announce the winner
+        await message.channel.send(f'🏆 {players[0].mention} has won the game with {lives[players[0]]} lives remaining! 🏆')
         players = []
-        turn = None
+        lives = {}
+        current_prompt = None
+        round_time = 30
+        game_running = False
+
+    # ==============
+    # OTHER COMMANDS
+    # ==============
+
+    elif message.content == '!stop' and message.author in players and game_running:
+        players = []
+        lives = {}
+        current_prompt = None
+        round_time = 30
+        game_running = False
         await message.channel.send('Game stopped.')
 
-    # ==================
-    # TURNS AND GAMEPLAY
-    # ==================
+    # Print the list of players
+    elif message.content == '!players':
+        await message.channel.send(f'👥 Players: {", ".join([p.mention for p in players])} 👥')
 
-    # Game in progress and message from current turn player (this takes the turn response, keep this below commands)
-    elif turn is not None and message.author == players[turn]:
+    elif message.content == '!help regex':
+        regexExplanation = discord.Embed(title="What is regex?",
+                      description="**Regular Expressions** are a way to match patterns in strings. They are used in many programming and computer processes, due to their efficiency and flexibility. These may look incredibly complicated, but they’re not — anyone can get the hang of them in under 10 minutes, just pay close attention to the examples below.",
+                      colour=0xffffff)
+        regexBasic = discord.Embed(title="Basic Rules — These are all you need for the `regex-easy` mode.",
+                      description="> Rule 1: A period . matches any letter.\n\ne.g. some answers to `p..` are:\n✅ pod | ✅ pet | ❌ package | ❌ egg\n\ne.g. some answers to `.a.` are:\n✅ bar | ✅ cat | ❌ fraud | ❌ each\n\n> Rule 2: Square brackets [ ] match one of the letters inside.\n\ne.g. some answers to `b[aeu]d` are:\n✅ bad | ✅ bed | ❌ bid | ❌ abode\n\ne.g. some answers to `[aeiou]....` are:\n✅ apple | ✅ icons | ❌ eggs | ❌ underneath\n\n> Rule 3: A plus + matches one or more of the previous character.\n\ne.g. some answers to `o.+n` are:\n✅ overthrown | ✅ omen | ❌ on | ❌ oregano\n\ne.g. some answers to `.+es+` are:\n✅ prowess | ✅ times | ❌ me | ❌ basin\n\n> Rule 4: An asterisk * matches zero or more of the previous character.\n\ne.g. some answers to `o.*n` are:\n✅ on | ✅ overthrown | ❌ omens | ❌ oregano\n\ne.g. some answers to `.*e.*` are:\n✅ eggplant | ✅ ledge | ❌ sasquatch | ❌ banana",
+                      colour=0xffffff)
+        regexAdditional = discord.Embed(title="Additional Rules — These are all you need for the `regex-hard` mode.",
+                      description="> Rule 5: [a-x] matches any character between a and x\n\ne.g. some answers to `n[e-p]t` are:\n✅ net | ✅ not | ❌ nut | ❌ nat\n\ne.g. some answers to `b[a-o][a-z][b-x]` are:\n✅ barn | ✅ bore | ❌ bush | ❌ bet\n\n> Rule 6: A square bracket with a caret at the start [^ ] matches any character not inside.\n\ne.g. some answers to `.[^ai].` are:\n✅ bed | ✅ cut | ❌ cat | ❌ rip\n\ne.g. some answers to `.[^aeiou]` are:\n✅ at | ✅ by | ❌ no | ❌ sauce\n\n> Rule 7: Parentheses are capturing groups ( ) and vertical bars | mean OR. \n\ne.g. some answers to `(eg|pa|ba).` are:\n✅ egg | ✅ pat | ❌ leg | ❌ nap\n\ne.g. some answers to `(bo|ro)(ok|ne)` are:\n✅bone | ✅rook | ❌shook | ❌borrow\n\n> Rule 8: A question mark ? matches zero or one of the previous character.\n\ne.g. some answers to `p?o?d` are:\n✅ pod | ✅ proud | ❌ prone | ❌ podge\n\ne.g. some answers to `a.?` are:\n✅ a | ✅ at | ❌ axe | ❌ amplifier\n\n> Rule 9: Curly brackets {m, n} match the previous character between m and n times.\n\ne.g. some answers to `fre{1,2}.+` are:\n✅ fresh | ✅ freeze | ❌ freeeeeze | ❌ freeeeeeeeeeeeeze\n\ne.g. some answers to `.{3,5}` are:\n✅ egg | ✅ eggs | ❌ eggplant | ❌ eggplants",
+                      colour=0xffffff)
+        await message.channel.send(embed=regexExplanation)
+        await message.channel.send(embed=regexBasic)
+        await message.channel.send(embed=regexAdditional)
 
-        # Check if prompt is in message
-        if mode == 'normal-easy' or mode == 'normal-hard':
-            if currentPrompt in message.content and message.content in words84k:
-                await message.channel.send('Correct!')
+    elif message.content == '!help' or message.content == '!mode' or message.content == '!modes':
+        helpCommands = discord.Embed(title="Commands:",
+                      description="`!help` — Opens the commands menu.\n\n`!help regex` — A simple explanation of how to regex.\n\n`!mode normal-easy` — Basic word game where you complete a word from a 3-character segment.\n\n`!mode normal-hard` — Basic word game where you complete a word from a 3 or 4 character segment, with harder prompts.\n\n`!mode regex-easy` — Word game where you try to match a word to the given regular expression. Contains only [ ] . * + \n\n`!mode regex-hard` — Word game where you try to match a word to the given regular expression. Contains all regex syntax.\n\n`!start` — If no game is currently running, starts a game after 10 seconds.\n\n`!join` — Join a game that is in the process of starting.\n\n`!players` — List all players currently in the game.\n\n`!stop` — End the currently active game.",
+                      colour=0xffffff)
+        await message.channel.send(embed=helpCommands)
 
-                # Cycle to the next player, returning to 0 when last player is reached
-                turn = (turn + 1) % len(players)
+    # Modes
+    elif message.content == '!mode normal-easy':
+        await message.channel.send('✅ Game changed to normal mode, easy difficulty. ✅')
+        mode = 'normal-easy'
+    elif message.content == '!mode normal-hard':
+        await message.channel.send('✅ Game changed to normal mode, hard difficulty. ✅')
+        mode = 'normal-hard'
+    elif message.content == '!mode regex-easy':
+        await message.channel.send('✅ Game changed to regex mode, easy difficulty. ✅')
+        mode = 'regex-easy'
+    elif message.content == '!mode regex-hard':
+        await message.channel.send('✅ Game changed to regex mode, hard difficulty. ✅')
+        mode = 'regex-hard'
 
-                # If turn is 0, one round cycle has ended. Game then continues to next turn below
-                if turn == 0:
-                    cycles += 1
-                    await message.channel.send(f'Round cycle complete. Moving on to round {cycles + 1}.')
-
-                # Game continues to next turn
-                if turn < len(players):
-                    currentPrompt = generatePrompt(mode)
-                    await message.channel.send(f"{players[turn].mention}, it's your turn. Match `{currentPrompt}`")
-
-        # Check the message against the regex
-        elif mode == 'regex-easy' or mode == 'regex-hard':
-            if re.match('^' + currentPrompt + '.*' + '$', message.content) and message.content in words84k:
-                await message.channel.send('Correct!')
-
-                # Cycle to the next player, returning to 0 when last player is reached
-                turn = (turn + 1) % len(players)
-
-                # If turn is 0, one round cycle has ended. Game then continues to next turn below
-                if turn == 0:
-                    cycles += 1
-                    await message.channel.send(f'Round cycle complete. Moving on to round {cycles + 1}.')
-
-                # Game continues to next turn
-                if turn < len(players):
-                    currentPrompt = generatePrompt(mode)
-                    await message.channel.send(f"{players[turn].mention}, it's your turn. Match `{currentPrompt}`")
-
-    # Game in progress and message from non-current turn player
-    # elif turn is not None and message.author != players[turn]:
-        # await message.channel.send(f"{message.author.mention}, it's not your turn.")
-
-# Run the bot
 client.run(' :) ')
