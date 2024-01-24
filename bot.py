@@ -20,9 +20,9 @@ def generate_prompt(mode):
     match mode:
         case 'normal':
             prompt = random.choice(normal_prompts)
-        case 'easy':
+        case 'regex-easy':
             prompt = random.choice(easy_regex_prompts)
-        case 'hard':
+        case 'regex-hard':
             prompt = random.choice(hard_regex_prompts)
     return prompt
 
@@ -98,40 +98,46 @@ async def on_message(message):
                         break
 
                     except asyncio.TimeoutError:
-                        lives[player] -= 2
-                        if lives[player] < 0:
-                            lives[player] = 0
+                        lives[player] -= 1
 
-                        await message.channel.send(f"⏰ Time's up, {player.mention}. **-2 lives** ({lives[player]} lives remaining) ⏰")
+                        await message.channel.send(f"⏰ Time's up, {player.mention}. **-1 life** ({lives[player]} lives remaining) ⏰")
 
                         if lives[player] == 0:
                             await message.channel.send(f'❌ {player.mention} has been eliminated. ❌')
                             players.remove(player)
                             del lives[player]
 
-                        await message.channel.send(f'❗ **SHOWDOWN!** Steal {player.mention}\'s prompt in the next 10 seconds for an extra life. ❗')
+                        else:
 
-                        def stealCheck(m):
-                            if mode == 'normal':
-                                return current_prompt in m.content and m.content in words
-                            else:
-                                return re.match('^' + current_prompt + '$', m.content) and m.content in words
-                        
-                        try:
-                            msg = await client.wait_for('message', check=stealCheck, timeout=10)
+                            await message.channel.send(f'❗ **SHOWDOWN!** Steal {player.mention}\'s prompt in the next 10 seconds for an extra life. ❗')
 
-                            lives[msg.author] += 1
-
-                            await message.channel.send(f'🎉 Congrats, {msg.author.mention}. **+1 life** ({lives[msg.author]} total lives) 🎉')
-
-                        except asyncio.TimeoutError:
-                            await message.channel.send(f'💥 Nobody solved {player.mention}\'s prompt. 💥')
+                            def stealCheck(m):
+                                if mode == 'normal':
+                                    return current_prompt in m.content and m.content in words
+                                else:
+                                    return re.match('^' + current_prompt + '$', m.content) and m.content in words
                             
-                            for p in players:
-                                if lives[p] == 0:
-                                    await message.channel.send(f'❌ {p.mention} has been eliminated. ❌')
-                                    players.remove(p)
-                                    del lives[p]
+                            try:
+                                msg = await client.wait_for('message', check=stealCheck, timeout=10)
+
+                                lives[msg.author] += 1
+                                lives[player] -= 1
+
+                                await message.channel.send(f'🎉 Congrats, {msg.author.mention} ({lives[msg.author]} total lives), you stole **+1 life** from {player.mention} ({lives[player]} lives remaining)!  🎉')
+
+                                if lives[player] == 0:
+                                    await message.channel.send(f'❌ {player.mention} has been eliminated. ❌')
+                                    players.remove(player)
+                                    del lives[player]
+
+                            except asyncio.TimeoutError:
+                                await message.channel.send(f'💥 Nobody solved {player.mention}\'s prompt. 💥')
+                                
+                                for p in players:
+                                    if lives[p] == 0:
+                                        await message.channel.send(f'❌ {p.mention} has been eliminated. ❌')
+                                        players.remove(p)
+                                        del lives[p]
 
                         break
                 
@@ -175,7 +181,7 @@ async def on_message(message):
                       description="> Rule 1: A period . matches any letter. \w does the same.\n\ne.g. some answers to `p.\w` are:\n✅ pod | ✅ pet | ❌ package | ❌ egg\n\ne.g. some answers to `.a.` are:\n✅ bar | ✅ cat | ❌ fraud | ❌ each\n\n> Rule 2: Square brackets [ ] match one of the letters inside.\n\ne.g. some answers to `b[aeu]d` are:\n✅ bad | ✅ bed | ❌ bid | ❌ abode\n\ne.g. some answers to `[aeiou]....` are:\n✅ apple | ✅ icons | ❌ eggs | ❌ underneath\n\n> Rule 3: A plus + matches one or more of the previous character.\n\ne.g. some answers to `o.+n` are:\n✅ overthrown | ✅ omen | ❌ on | ❌ oregano\n\ne.g. some answers to `.+es+` are:\n✅ prowess | ✅ times | ❌ me | ❌ basin\n\n> Rule 4: An asterisk * matches zero or more of the previous character.\n\ne.g. some answers to `o.*n` are:\n✅ on | ✅ overthrown | ❌ omens | ❌ oregano\n\ne.g. some answers to `.*e.*` are:\n✅ eggplant | ✅ ledge | ❌ sasquatch | ❌ banana",
                       colour=0xffffff)
         regexAdditional = discord.Embed(title="Additional Rules — These are all you need for the `regex-hard` mode.",
-                      description="> Rule 5: [a-x] matches any character between a and x\n\ne.g. some answers to `n[e-p]t` are:\n✅ net | ✅ not | ❌ nut | ❌ nat\n\ne.g. some answers to `b[a-o][a-z][b-x]` are:\n✅ barn | ✅ bore | ❌ bush | ❌ bet\n\n> Rule 6: A square bracket with a caret at the start [^ ] matches any character not inside.\n\ne.g. some answers to `.[^ai].` are:\n✅ bed | ✅ cut | ❌ cat | ❌ rip\n\ne.g. some answers to `.[^aeiou]` are:\n✅ at | ✅ by | ❌ no | ❌ sauce\n\n> Rule 7: Parentheses are capturing groups ( ) and vertical bars | mean OR. \n\ne.g. some answers to `(eg|pa|ba).` are:\n✅ egg | ✅ pat | ❌ leg | ❌ nap\n\ne.g. some answers to `(bo|ro)(ok|ne)` are:\n✅bone | ✅rook | ❌shook | ❌borrow\n\n> Rule 8: A question mark ? matches zero or one of the previous character.\n\ne.g. some answers to `p?o?d` are:\n✅ pod | ✅ proud | ❌ prone | ❌ podge\n\ne.g. some answers to `a.?` are:\n✅ a | ✅ at | ❌ axe | ❌ amplifier\n\n> Rule 9: Curly brackets {m, n} match the previous character between m and n times.\n\ne.g. some answers to `fre{1,2}.+` are:\n✅ fresh | ✅ freeze | ❌ freeeeeze | ❌ freeeeeeeeeeeeeze\n\ne.g. some answers to `.{3,5}` are:\n✅ egg | ✅ eggs | ❌ eggplant | ❌ eggplants",
+                      description="> Rule 5: [a-x] matches any character between a and x\n\ne.g. some answers to `n[e-p]t` are:\n✅ net | ✅ not | ❌ nut | ❌ nat\n\ne.g. some answers to `b[a-o][a-z][b-x]` are:\n✅ barn | ✅ bore | ❌ bush | ❌ bet\n\n> Rule 6: A square bracket with a caret at the start [^ ] matches any character not inside.\n\ne.g. some answers to `.[^ai].` are:\n✅ bed | ✅ cut | ❌ cat | ❌ rip\n\ne.g. some answers to `.[^aeiou]` are:\n✅ at | ✅ by | ❌ no | ❌ sauce\n\n> Rule 7: Parentheses are capturing groups ( ) and vertical bars | mean OR. \n\ne.g. some answers to `(eg|pa|ba).` are:\n✅ egg | ✅ pat | ❌ leg | ❌ nap\n\ne.g. some answers to `(bo|ro)(ok|ne)` are:\n✅bone | ✅rook | ❌shook | ❌borrow\n\n> Rule 8: A question mark ? matches zero or one of the previous character.\n\ne.g. some answers to `p?o?d` are:\n✅ pod | ✅ od | ❌ prone | ❌ podge\n\ne.g. some answers to `a.?` are:\n✅ a | ✅ at | ❌ axe | ❌ amplifier\n\n> Rule 9: Curly brackets {m, n} match the previous character between m and n times.\n\ne.g. some answers to `fre{1,2}??` are:\n✅ fresh | ✅ freeze | ❌ freeeeeze | ❌ freeeeeeeeeeeeeze\n\ne.g. some answers to `.{3,5}` are:\n✅ egg | ✅ eggs | ❌ eggplant | ❌ eggplants",
                       colour=0xffffff)
         await message.channel.send(embed=regexExplanation)
         await message.channel.send(embed=regexBasic)
@@ -183,7 +189,7 @@ async def on_message(message):
 
     elif message.content == '!help' or message.content == '!mode' or message.content == '!modes':
         helpCommands = discord.Embed(title="Commands:",
-                      description="`!help` — Opens the commands menu.\n\n`!help regex` — A simple explanation of how to regex.`!mode normal` — Basic word game where you complete a word from a 3 or 4 character segment.\n\n`!mode regex-easy` — Word game where you try to match a word to the given regular expression. Contains only [ ] . * + \n\n`!mode regex-hard` — Word game where you try to match a word to the given regular expression. Contains all regex syntax.\n\n`!start` — If no game is currently running, starts a game after 10 seconds.\n\n`!join` — Join a game that is in the process of starting.\n\n`!players` — List all players currently in the game.\n\n`!stop` — End the currently active game.",
+                      description="`!help` — Opens the commands menu.\n\n`!help regex` — A simple explanation of how to regex.\n\n`!mode normal` — Basic word game where you complete a word from a 3 or 4 character segment.\n\n`!mode regex-easy` — Word game where you try to match a word to the given regular expression. Contains only [ ] . * + \n\n`!mode regex-hard` — Word game where you try to match a word to the given regular expression. Contains all regex syntax.\n\n`!start` — If no game is currently running, starts a game after 10 seconds.\n\n`!join` — Join a game that is in the process of starting.\n\n`!players` — List all players currently in the game.\n\n`!stop` — End the currently active game.",
                       colour=0xffffff)
         await message.channel.send(embed=helpCommands)
 
@@ -198,4 +204,4 @@ async def on_message(message):
         await message.channel.send('✅ Game changed to regex mode, hard difficulty. ✅')
         mode = 'regex-hard'
 
-client.run(' :) ')
+client.run('INSERT TOKEN HERE')
